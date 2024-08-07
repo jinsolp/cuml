@@ -88,12 +88,13 @@ struct DistancePostProcessSqrt {
 };
 
 template <typename T>
+// out and in can be same (can be done in-place)
 CUML_KERNEL void copy_first_k_cols_shift_self(
   T* out, T* in, size_t out_k, size_t in_k, size_t nrows)
 {
   size_t row = blockIdx.x * blockDim.x + threadIdx.x;
   if (row < nrows) {
-    for (size_t i = 1; i < out_k; i++) {
+    for (size_t i = out_k - 1; i >= 1; i--) {
       out[row * out_k + i] = in[row * in_k + i - 1];
     }
     out[row * out_k] = row;
@@ -114,12 +115,13 @@ CUML_KERNEL void copy_first_k_cols_shift_zero(
 }
 
 template <typename T>
+// out and in can be same (can be done in-place)
 CUML_KERNEL void copy_first_k_cols_shift_core_dists(
   T* out, T* in, T* core_dists, size_t out_k, size_t in_k, size_t nrows)
 {
   size_t row = blockIdx.x * blockDim.x + threadIdx.x;
   if (row < nrows) {
-    for (size_t i = 1; i < out_k; i++) {
+    for (size_t i = out_k - 1; i >= 1; i--) {
       out[row * out_k + i] = in[row * in_k + i - 1];
     }
     out[row * out_k] = static_cast<T>(core_dists[row]);
@@ -181,6 +183,8 @@ void compute_knn(const raft::handle_t& handle,
                     true,
                     true,
                     metric);
+    raft::print_device_vector("inds", int64_indices.data(), 2 * k, std::cout);
+    raft::print_device_vector("dist", dists, 2 * k, std::cout);
   } else {  // NN_DESCENT
     auto epilogue                 = DistancePostProcessSqrt<value_idx, float>{};
     build_params.return_distances = true;
@@ -319,11 +323,11 @@ float calculate_mutual_reach_dist(
     x_j_norm += x_j(d) * x_j(d);
   }
 
-  // normalize the data
-  for (int d = 0; d < dim; d++) {
-    x_i(d) = x_i(d) / std::sqrt(x_i_norm);
-    x_j(d) = x_j(d) / std::sqrt(x_j_norm);
-  }
+  // // normalize the data
+  // for (int d = 0; d < dim; d++) {
+  //   x_i(d) = x_i(d) / std::sqrt(x_i_norm);
+  //   x_j(d) = x_j(d) / std::sqrt(x_j_norm);
+  // }
 
   float dot = 0;
   // get dot
@@ -331,7 +335,7 @@ float calculate_mutual_reach_dist(
     dot += x_i(d) * x_j(d);
   }
 
-  float res = std::max((float)(x_i_norm + x_j_norm - 2.0 * dot), core_dist);
+  float res = std::max((float)(std::sqrt(x_i_norm + x_j_norm - 2.0 * dot)), core_dist);
   // printf("mutual reach dist: %f, core dist %f\t", res, core_dist);
   return res;
 }
@@ -395,6 +399,9 @@ void mutual_reachability_knn_l2(
     // raft::print_device_vector("bfk", out_inds, m * k, outfile);
     // outfile.close();
 
+    raft::print_device_vector("inds", out_inds, 2 * k, std::cout);
+    raft::print_device_vector("dist", out_dists, 2 * k, std::cout);
+
   } else {
     auto epilogue = ReachabilityPostProcessSqrt<value_idx, value_t>{core_dists, alpha};
     build_params.return_distances = true;
@@ -407,8 +414,8 @@ void mutual_reachability_knn_l2(
     auto graph =
       NNDescent::detail::build<value_t, value_idx>(handle, build_params, dataset, epilogue);
 
-    // size_t TPB        = 256;
-    // size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);
+    size_t TPB        = 256;
+    size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);
 
     auto indices_d =
       raft::make_device_matrix<value_idx, value_idx>(handle, m, build_params.graph_degree);
@@ -418,17 +425,21 @@ void mutual_reachability_knn_l2(
                m * build_params.graph_degree,
                handle.get_stream());
 
-    // if (graph.distances().has_value()) {
-    //   copy_first_k_cols_shift_core_dists<float>
-    //     <<<num_blocks, TPB, 0, handle.get_stream()>>>(out_dists,
-    //                                                   graph.distances().value().data_handle(),
-    //                                                   core_dists,
-    //                                                   static_cast<size_t>(k),
-    //                                                   build_params.graph_degree,
-    //                                                   m);
-    // }
-    // copy_first_k_cols_shift_self<value_idx><<<num_blocks, TPB, 0, handle.get_stream()>>>(
-    //   out_inds, indices_d.data_handle(), static_cast<size_t>(k), build_params.graph_degree, m);
+    if (graph.distances().has_value()) {
+      copy_first_k_cols_shift_core_dists<float>
+        <<<num_blocks, TPB, 0, handle.get_stream()>>>(graph.distances().value().data_handle(),
+                                                      graph.distances().value().data_handle(),
+                                                      core_dists,
+                                                      build_params.graph_degree,
+                                                      build_params.graph_degree,
+                                                      m);
+    }
+    copy_first_k_cols_shift_self<value_idx>
+      <<<num_blocks, TPB, 0, handle.get_stream()>>>(indices_d.data_handle(),
+                                                    indices_d.data_handle(),
+                                                    build_params.graph_degree,
+                                                    build_params.graph_degree,
+                                                    m);
 
     // raft::print_device_vector("inds", out_inds, 2 * k, std::cout);
     // raft::print_device_vector("dist", out_dists, 2 * k, std::cout);
@@ -484,12 +495,13 @@ void mutual_reachability_knn_l2(
           new_dists.data_handle()[i * k + j] =
             calculate_mutual_reach_dist<value_t>(handle, X, i, curr_idx, core_dists_h(i), n);
         }
-        if (i == 0) {
-          printf("calculated mutual reach dist: [%d] (0, %d) %f\n",
-                 j,
-                 (int)curr_idx,
-                 calculate_mutual_reach_dist<value_t>(handle, X, i, curr_idx, core_dists_h(i), n));
-        }
+        // if (i == 0) {
+        //   printf("calculated mutual reach dist: [%d] (0, %d) %f\n",
+        //          j,
+        //          (int)curr_idx,
+        //          calculate_mutual_reach_dist<value_t>(handle, X, i, curr_idx, core_dists_h(i),
+        //          n));
+        // }
       }
     }
     raft::print_host_vector("inds after optimize", new_inds.data_handle(), 2 * k, std::cout);
@@ -512,8 +524,7 @@ void mutual_reachability_knn_l2(
       thrust::make_zip_iterator(thrust::make_tuple(h_keys_vec.end(), h_vals_vec.end()));
 
     for (size_t i = 0; i < m; i++) {
-      thrust::sort(
-        tuple_begin + i * k + 1, tuple_begin + (i + 1) * k, CustomComparator<value_idx>());
+      thrust::sort(tuple_begin + i * k, tuple_begin + (i + 1) * k, CustomComparator<value_idx>());
     }
 
     int cnt = 0;

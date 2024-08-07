@@ -32,6 +32,7 @@ from cuml.common import input_to_cuml_array
 from cuml.common.array_descriptor import CumlArrayDescriptor
 from cuml.internals.api_decorators import device_interop_preparation
 from cuml.internals.api_decorators import enable_device_interop
+from cuml.internals.mem_type import MemoryType
 from cuml.internals.mixins import ClusterMixin
 from cuml.internals.mixins import CMajorInputTagMixin
 from cuml.internals.import_utils import has_hdbscan
@@ -775,17 +776,22 @@ class HDBSCAN(UniversalBase, ClusterMixin, CMajorInputTagMixin):
 
     @generate_docstring()
     @enable_device_interop
-    def fit(self, X, y=None, convert_dtype=True) -> "HDBSCAN":
+    def fit(self, X, y=None, convert_dtype=True, data_on_host=False) -> "HDBSCAN":
         """
         Fit HDBSCAN model from features.
         """
+        if data_on_host:
+            convert_to_mem_type = MemoryType.host
+        else:
+            convert_to_mem_type = MemoryType.device
 
         X_m, n_rows, n_cols, self.dtype = \
             input_to_cuml_array(X, order='C',
                                 check_dtype=[np.float32],
                                 convert_to_dtype=(np.float32
                                                   if convert_dtype
-                                                  else None))
+                                                  else None),
+                                convert_to_mem_type=convert_to_mem_type)
 
         self.X_m = X_m
         self.n_rows = n_rows
