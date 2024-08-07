@@ -136,6 +136,23 @@ struct FixConnectivitiesRedOp {
   }
 };
 
+// // Functor to post-process distances into reachability space (Sqrt)
+// // For usage with NN Descent which internally supports L2Expanded only
+// template <typename value_idx, typename value_t = float>
+// struct ReachabilityMaskPostProcessSqrt {
+//   DI value_t operator()(value_t value, value_idx row, value_idx col) const
+//   {
+//     if (color[row] == color[col]) {
+//       return FLT_MAX;
+//     }
+//     return max(core_dists[col], max(core_dists[row], powf(fabsf(alpha * value), 0.5)));
+//   }
+//   const value_t* core_dists;
+//   const value_idx* color;
+//   value_t alpha;
+//   float FLT_MAX = std::numeric_limits<float>::max();
+// };
+
 /**
  * Constructs a linkage by computing mutual reachability, mst, and
  * dendrogram. This is shared by HDBSCAN and Robust Single Linkage
@@ -192,7 +209,13 @@ void build_linkage(const raft::handle_t& handle,
    */
 
   rmm::device_uvector<value_idx> color(m, stream);
+
+  // cudaPointerAttributes attr;
+  // RAFT_CUDA_TRY(cudaPointerGetAttributes(&attr, inputs.X));
+  // float* ptr = reinterpret_cast<float*>(attr.devicePointer);
+  // if (ptr != nullptr) { // data on device
   FixConnectivitiesRedOp<value_idx, value_t> red_op(core_dists, m);
+
   // during knn graph connection
   raft::cluster::detail::build_sorted_mst(handle,
                                           X,
@@ -209,6 +232,36 @@ void build_linkage(const raft::handle_t& handle,
                                           red_op,
                                           metric,
                                           (size_t)10);
+  // } else { // data on host
+  //   auto epilogue = ReachabilityMaskPostProcessSqrt<value_idx, value_t>{core_dists, color.data(),
+  //   params.alpha};
+
+  //   // during knn graph connection
+  //   raft::cluster::detail::build_sorted_mst(handle,
+  //                                           X,
+  //                                           mutual_reachability_indptr.data(),
+  //                                           mutual_reachability_coo.cols(),
+  //                                           mutual_reachability_coo.vals(),
+  //                                           m,
+  //                                           n,
+  //                                           out.get_mst_src(),
+  //                                           out.get_mst_dst(),
+  //                                           out.get_mst_weights(),
+  //                                           color.data(),
+  //                                           mutual_reachability_coo.nnz,
+  //                                           epilogue,
+  //                                           metric,
+  //                                           (size_t)10);
+  // }
+
+  // raft::print_host_vector("mst src", out.get_mst_src(), 20, std::cout);
+  // raft::print_host_vector("mst dst", out.get_mst_dst(), 20, std::cout);
+  // raft::print_host_vector("mst weight", out.get_mst_weights(), 20, std::cout);
+  // printf("returned from build sorted mst\n");
+  // handle.sync_stream();
+  // raft::print_device_vector("mst src",out.get_mst_src(), m - 1, std::cout);
+  // raft::print_device_vector("mst dst", out.get_mst_dst(), m - 1, std::cout);
+  // raft::print_device_vector("mst weights", out.get_mst_weights(), m - 1, std::cout);
 
   /**
    * Perform hierarchical labeling
@@ -223,6 +276,7 @@ void build_linkage(const raft::handle_t& handle,
                                                out.get_children(),
                                                out.get_deltas(),
                                                out.get_sizes());
+  printf("returned from build dendrogram\n");
 }
 
 template <typename value_idx = int64_t, typename value_t = float>
