@@ -301,7 +301,6 @@ struct ReachabilityPostProcessSqrt : NNDescent::DistEpilogue<value_idx, value_t>
   __host__ void preprocess_for_batch(value_idx* cluster_indices_, size_t num_data_in_cluster)
   {
     cluster_indices = cluster_indices_;
-    printf("preprocessing for batch!!1\n");
   }
 
   const value_t* core_dists;
