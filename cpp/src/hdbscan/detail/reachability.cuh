@@ -405,7 +405,7 @@ void mutual_reachability_knn_l2(
   } else {
     auto epilogue = ReachabilityPostProcessSqrt<value_idx, value_t>{core_dists, alpha};
     build_params.return_distances = true;
-    build_params.graph_degree     = (size_t)((build_params.graph_degree * 1.5 + 31) / 32) * 32;
+    // build_params.graph_degree     = (size_t)((build_params.graph_degree * 1.5 + 31) / 32) * 32;
     printf("build params graph degree %lu\n", build_params.graph_degree);
     RAFT_EXPECTS(static_cast<size_t>(k) <= build_params.graph_degree,
                  "n_neighbors should be smaller than the graph degree computed by nn descent");
