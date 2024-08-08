@@ -26,7 +26,7 @@
 #include <raft/distance/distance.cuh>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/neighbors/brute_force.cuh>
-#include <raft/neighbors/detail/nn_descent.cuh>
+#include <raft/neighbors/nn_descent.cuh>
 #include <raft/neighbors/nn_descent_types.hpp>
 #include <raft/sparse/convert/csr.cuh>
 #include <raft/sparse/linalg/symmetrize.cuh>
@@ -80,7 +80,7 @@ void core_distances(
 // Functor to post-process distances by sqrt
 // For usage with NN Descent which internally supports L2Expanded only
 template <typename value_idx, typename value_t = float>
-struct DistancePostProcessSqrt {
+struct DistancePostProcessSqrt : NNDescent::DistEpilogue<value_idx, value_t> {
   DI value_t operator()(value_t value, value_idx row, value_idx col) const
   {
     return powf(fabsf(value), 0.5);
@@ -186,14 +186,14 @@ void compute_knn(const raft::handle_t& handle,
     raft::print_device_vector("inds", int64_indices.data(), 2 * k, std::cout);
     raft::print_device_vector("dist", dists, 2 * k, std::cout);
   } else {  // NN_DESCENT
-    auto epilogue                 = DistancePostProcessSqrt<value_idx, float>{};
+    auto epilogue                 = DistancePostProcessSqrt<int64_t, float>{};
     build_params.return_distances = true;
     RAFT_EXPECTS(static_cast<size_t>(k) <= build_params.graph_degree,
                  "n_neighbors should be smaller than the graph degree computed by nn descent");
 
     auto dataset = raft::make_host_matrix_view<const float, int64_t>(X, m, n);
 
-    auto graph = NNDescent::detail::build<float, int64_t>(handle, build_params, dataset, epilogue);
+    auto graph = NNDescent::build<float, int64_t>(handle, build_params, dataset, epilogue);
 
     size_t TPB        = 256;
     size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);
@@ -284,13 +284,29 @@ struct ReachabilityPostProcess {
 // Functor to post-process distances into reachability space (Sqrt)
 // For usage with NN Descent which internally supports L2Expanded only
 template <typename value_idx, typename value_t = float>
-struct ReachabilityPostProcessSqrt {
-  DI value_t operator()(value_t value, value_idx row, value_idx col) const
+struct ReachabilityPostProcessSqrt : NNDescent::DistEpilogue<value_idx, value_t> {
+  ReachabilityPostProcessSqrt(value_t* core_dists_, value_t alpha_)
+    : NNDescent::DistEpilogue<value_idx, value_t>(), core_dists(core_dists_), alpha(alpha_){};
+
+  __device__ value_t operator()(value_t value, value_idx row, value_idx col) const
   {
-    return max(core_dists[col], max(core_dists[row], powf(fabsf(alpha * value), 0.5)));
+    if (cluster_indices == nullptr) {
+      return max(core_dists[col], max(core_dists[row], powf(fabsf(alpha * value), 0.5)));
+    } else {
+      return max(core_dists[cluster_indices[col]],
+                 max(core_dists[cluster_indices[row]], powf(fabsf(alpha * value), 0.5)));
+    }
   }
+
+  __host__ void preprocess_for_batch(value_idx* cluster_indices_, size_t num_data_in_cluster)
+  {
+    cluster_indices = cluster_indices_;
+    printf("preprocessing for batch!!1\n");
+  }
+
   const value_t* core_dists;
   value_t alpha;
+  value_idx* cluster_indices = nullptr;
 };
 
 template <typename value_idx>
@@ -411,8 +427,11 @@ void mutual_reachability_knn_l2(
                  "n_neighbors should be smaller than the graph degree computed by nn descent");
 
     auto dataset = raft::make_host_matrix_view<const value_t, int64_t>(X, m, n);
-    auto graph =
-      NNDescent::detail::build<value_t, value_idx>(handle, build_params, dataset, epilogue);
+    raft::print_host_vector("dataset 0", X, n, std::cout);
+    raft::print_host_vector("dataset 26251", X + 26251 * n, n, std::cout);
+    raft::print_device_vector("core dist 0", core_dists, 1, std::cout);
+    raft::print_device_vector("core dist 26251", core_dists + 26251, 1, std::cout);
+    auto graph = NNDescent::build<value_t, value_idx>(handle, build_params, dataset, epilogue);
 
     size_t TPB        = 256;
     size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);

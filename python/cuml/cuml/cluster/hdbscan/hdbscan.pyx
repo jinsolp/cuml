@@ -55,6 +55,8 @@ IF GPUBUILD == 1:
             size_t max_iterations,
             float termination_threshold,
             bool return_distances,
+            size_t n_clusters,
+            bool do_batch,
 
     cdef extern from "cuml/cluster/hdbscan.hpp" namespace "ML::HDBSCAN::Common":
 
@@ -878,12 +880,16 @@ class HDBSCAN(UniversalBase, ClusterMixin, CMajorInputTagMixin):
                     params.nn_descent_params.max_iterations = <size_t> 20
                     params.nn_descent_params.termination_threshold = <float> 0.0001
                     params.nn_descent_params.return_distances = <bool> True
+                    params.nn_descent_params.n_clusters = <size_t> 2
+                    params.nn_descent_params.do_batch = <bool> False
                 else:
                     params.nn_descent_params.graph_degree = <size_t> self.build_kwds.get("nnd_graph_degree", 64)
                     params.nn_descent_params.intermediate_graph_degree = <size_t> self.build_kwds.get("nnd_intermediate_graph_degree", 128)
                     params.nn_descent_params.max_iterations = <size_t> self.build_kwds.get("nnd_max_iterations", 20)
                     params.nn_descent_params.termination_threshold = <float> self.build_kwds.get("nnd_termination_threshold", 0.0001)
                     params.nn_descent_params.return_distances = <bool> self.build_kwds.get("nnd_return_distances", True)
+                    params.nn_descent_params.n_clusters = <size_t> self.build_kwds.get("nnd_n_clusters", 2)
+                    params.nn_descent_params.do_batch = <bool> self.build_kwds.get("nnd_do_batch", False)
             else:
                 raise ValueError("Build algo not supported. "
                                  "Must one of {'brute_force_knn', 'nn_descent'}")
