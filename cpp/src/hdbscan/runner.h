@@ -205,7 +205,7 @@ void build_linkage(const raft::handle_t& handle,
                                                   params.build_algo,
                                                   params.nn_descent_params);
   auto end = raft::curTimeMillis();
-  printf("\tgetting the mutual reachability graph (single component): %\n", end - start);
+  printf("\tgetting the mutual reachability graph (single component): %d\n", end - start);
   /**
    * Construct MST sorted by weights
    */
@@ -231,7 +231,7 @@ void build_linkage(const raft::handle_t& handle,
                                           metric,
                                           (size_t)10);
   end = raft::curTimeMillis();
-  printf("\tbuilding sorted mst: %\n", end - start);
+  printf("\tbuilding sorted mst: %d\n", end - start);
 
   /**
    * Perform hierarchical labeling
@@ -248,7 +248,7 @@ void build_linkage(const raft::handle_t& handle,
                                                out.get_deltas(),
                                                out.get_sizes());
   end = raft::curTimeMillis();
-  printf("\tbuilding dendrogram: %\n", end - start);
+  printf("\tbuilding dendrogram: %d\n", end - start);
 }
 
 template <typename value_idx = int64_t, typename value_t = float>
@@ -270,7 +270,7 @@ void _fit_hdbscan(const raft::handle_t& handle,
   auto start = raft::curTimeMillis();
   build_linkage(handle, X, m, n, metric, params, core_dists, out);
   auto end = raft::curTimeMillis();
-  printf("time to build linkage: %\n", end - start);
+  printf("time to build linkage: %d\n", end - start);
 
   /**
    * Condense branches of tree according to min cluster size
@@ -284,7 +284,7 @@ void _fit_hdbscan(const raft::handle_t& handle,
                                               m,
                                               out.get_condensed_tree());
   end = raft::curTimeMillis();
-  printf("time to build condensed hierarchy: %\n", end - start);
+  printf("time to build condensed hierarchy: %d\n", end - start);
 
   /**
    * Extract labels from stability
@@ -312,7 +312,7 @@ void _fit_hdbscan(const raft::handle_t& handle,
 
   out.set_n_clusters(n_selected_clusters);
   end = raft::curTimeMillis();
-  printf("time to extract_clusters: %\n", end - start);
+  printf("time to extract_clusters: %d\n", end - start);
 
   auto lambdas_ptr   = thrust::device_pointer_cast(out.get_condensed_tree().get_lambdas());
   value_t max_lambda = *(thrust::max_element(
@@ -328,7 +328,7 @@ void _fit_hdbscan(const raft::handle_t& handle,
                                           out.get_stabilities(),
                                           label_map.data());
   end = raft::curTimeMillis();
-  printf("time to get_stability_scores: %\n", end - start);
+  printf("time to get_stability_scores: %d\n", end - start);
   /**
    * Normalize labels so they are drawn from a monotonically increasing set
    * starting at 0 even in the presence of noise (-1)
