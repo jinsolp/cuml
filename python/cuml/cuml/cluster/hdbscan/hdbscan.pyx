@@ -116,6 +116,7 @@ IF GPUBUILD == 1:
             CLUSTER_SELECTION_METHOD cluster_selection_method,
             GRAPH_BUILD_ALGO build_algo,
             index_params nn_descent_params,
+            bool approx_mst,
 
         cdef cppclass PredictionData[int, float]:
             PredictionData(const handle_t &handle,
@@ -522,6 +523,7 @@ class HDBSCAN(UniversalBase, ClusterMixin, CMajorInputTagMixin):
                  connectivity='knn',
                  output_type=None,
                  prediction_data=False,
+                 approx_mst = False,
                  build_algo='auto',
                  build_kwds=None):
 
@@ -556,6 +558,7 @@ class HDBSCAN(UniversalBase, ClusterMixin, CMajorInputTagMixin):
 
         self.build_algo = build_algo
         self.build_kwds = build_kwds
+        self.approx_mst = approx_mst
 
         self.n_clusters_ = None
         self.n_leaves_ = None
@@ -893,6 +896,8 @@ class HDBSCAN(UniversalBase, ClusterMixin, CMajorInputTagMixin):
             else:
                 raise ValueError("Build algo not supported. "
                                  "Must one of {'brute_force_knn', 'nn_descent'}")
+
+            params.approx_mst = self.approx_mst
 
             cdef DistanceType metric
             if self.metric in _metrics_mapping:

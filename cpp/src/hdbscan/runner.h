@@ -203,9 +203,10 @@ void build_linkage(const raft::handle_t& handle,
                                                   core_dists,
                                                   mutual_reachability_coo,
                                                   params.build_algo,
-                                                  params.nn_descent_params);
+                                                  params.nn_descent_params,
+                                                  params.approx_mst);
   auto end = raft::curTimeMillis();
-  printf("\tgetting the mutual reachability graph (single component): %d\n", end - start);
+  printf("\tgetting the mutual reachability graph: %d\n", end - start);
   /**
    * Construct MST sorted by weights
    */
@@ -295,7 +296,6 @@ void _fit_hdbscan(const raft::handle_t& handle,
 
   rmm::device_uvector<value_idx> label_map(out.get_condensed_tree().get_n_clusters(),
                                            handle.get_stream());
-  start = raft::curTimeMillis();
   value_idx n_selected_clusters =
     detail::Extract::extract_clusters(handle,
                                       out.get_condensed_tree(),
@@ -311,14 +311,11 @@ void _fit_hdbscan(const raft::handle_t& handle,
                                       params.cluster_selection_epsilon);
 
   out.set_n_clusters(n_selected_clusters);
-  end = raft::curTimeMillis();
-  printf("time to extract_clusters: %d\n", end - start);
 
   auto lambdas_ptr   = thrust::device_pointer_cast(out.get_condensed_tree().get_lambdas());
   value_t max_lambda = *(thrust::max_element(
     exec_policy, lambdas_ptr, lambdas_ptr + out.get_condensed_tree().get_n_edges()));
 
-  start = raft::curTimeMillis();
   detail::Stability::get_stability_scores(handle,
                                           labels,
                                           tree_stabilities.data(),
@@ -327,8 +324,6 @@ void _fit_hdbscan(const raft::handle_t& handle,
                                           m,
                                           out.get_stabilities(),
                                           label_map.data());
-  end = raft::curTimeMillis();
-  printf("time to get_stability_scores: %d\n", end - start);
   /**
    * Normalize labels so they are drawn from a monotonically increasing set
    * starting at 0 even in the presence of noise (-1)

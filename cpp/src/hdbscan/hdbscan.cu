@@ -34,8 +34,11 @@ void hdbscan(const raft::handle_t& handle,
              HDBSCAN::Common::hdbscan_output<int, float>& out,
              float* core_dists)
 {
+  auto start = raft::curTimeMillis();
   rmm::device_uvector<int> labels(m, handle.get_stream());
   HDBSCAN::_fit_hdbscan(handle, X, m, n, metric, params, labels.data(), core_dists, out);
+  auto end = raft::curTimeMillis();
+  printf("running entire hdbscan: %d\n", end - start);
 }
 
 void build_condensed_hierarchy(const raft::handle_t& handle,
