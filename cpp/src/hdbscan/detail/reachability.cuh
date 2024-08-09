@@ -183,8 +183,6 @@ void compute_knn(const raft::handle_t& handle,
                     true,
                     true,
                     metric);
-    raft::print_device_vector("inds", int64_indices.data(), 2 * k, std::cout);
-    raft::print_device_vector("dist", dists, 2 * k, std::cout);
   } else {  // NN_DESCENT
     auto epilogue                 = DistancePostProcessSqrt<int64_t, float>{};
     build_params.return_distances = true;
@@ -286,26 +284,36 @@ struct ReachabilityPostProcess {
 template <typename value_idx, typename value_t = float>
 struct ReachabilityPostProcessSqrt : NNDescent::DistEpilogue<value_idx, value_t> {
   ReachabilityPostProcessSqrt(value_t* core_dists_, value_t alpha_)
-    : NNDescent::DistEpilogue<value_idx, value_t>(), core_dists(core_dists_), alpha(alpha_){};
+    : NNDescent::DistEpilogue<value_idx, value_t>(),
+      core_dists(core_dists_),
+      alpha(alpha_),
+      value_t_max(std::numeric_limits<value_t>::max()){};
 
   __device__ value_t operator()(value_t value, value_idx row, value_idx col) const
   {
     if (cluster_indices == nullptr) {
       return max(core_dists[col], max(core_dists[row], powf(fabsf(alpha * value), 0.5)));
     } else {
-      return max(core_dists[cluster_indices[col]],
-                 max(core_dists[cluster_indices[row]], powf(fabsf(alpha * value), 0.5)));
+      if (row < num_data_in_cluster && col < num_data_in_cluster) {
+        return max(core_dists[cluster_indices[col]],
+                   max(core_dists[cluster_indices[row]], powf(fabsf(alpha * value), 0.5)));
+      } else {
+        return value_t_max;
+      }
     }
   }
 
-  __host__ void preprocess_for_batch(value_idx* cluster_indices_, size_t num_data_in_cluster)
+  __host__ void preprocess_for_batch(value_idx* cluster_indices_, size_t num_data_in_cluster_)
   {
-    cluster_indices = cluster_indices_;
+    cluster_indices     = cluster_indices_;
+    num_data_in_cluster = num_data_in_cluster_;
   }
 
   const value_t* core_dists;
   value_t alpha;
+  value_t value_t_max;
   value_idx* cluster_indices = nullptr;
+  size_t num_data_in_cluster = 0;
 };
 
 template <typename value_idx>
@@ -414,9 +422,6 @@ void mutual_reachability_knn_l2(
     // raft::print_device_vector("bfk", out_inds, m * k, outfile);
     // outfile.close();
 
-    raft::print_device_vector("inds", out_inds, 2 * k, std::cout);
-    raft::print_device_vector("dist", out_dists, 2 * k, std::cout);
-
   } else {
     auto epilogue = ReachabilityPostProcessSqrt<value_idx, value_t>{core_dists, alpha};
     build_params.return_distances = true;
@@ -426,11 +431,7 @@ void mutual_reachability_knn_l2(
                  "n_neighbors should be smaller than the graph degree computed by nn descent");
 
     auto dataset = raft::make_host_matrix_view<const value_t, int64_t>(X, m, n);
-    raft::print_host_vector("dataset 0", X, n, std::cout);
-    raft::print_host_vector("dataset 26251", X + 26251 * n, n, std::cout);
-    raft::print_device_vector("core dist 0", core_dists, 1, std::cout);
-    raft::print_device_vector("core dist 26251", core_dists + 26251, 1, std::cout);
-    auto graph = NNDescent::build<value_t, value_idx>(handle, build_params, dataset, epilogue);
+    auto graph   = NNDescent::build<value_t, value_idx>(handle, build_params, dataset, epilogue);
 
     size_t TPB        = 256;
     size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);
@@ -459,16 +460,6 @@ void mutual_reachability_knn_l2(
                                                     build_params.graph_degree,
                                                     m);
 
-    // raft::print_device_vector("inds", out_inds, 2 * k, std::cout);
-    // raft::print_device_vector("dist", out_dists, 2 * k, std::cout);
-
-    // char buffer[50];
-    // std::sprintf(buffer, "jinsolp_out_inds_nnd.txt");
-    // char* buf = &(buffer[0]);
-    // std::ofstream outfile(buf);
-    // raft::print_device_vector("nnd", out_inds, m * k, outfile);
-    // outfile.close();
-
     auto new_inds  = raft::make_host_matrix<value_idx, int64_t>(m, k);
     auto new_dists = raft::make_host_matrix<float, int64_t>(m, k);
     auto knn_inds  = raft::make_host_matrix<value_idx, int64_t>(m, build_params.graph_degree);
@@ -482,11 +473,6 @@ void mutual_reachability_knn_l2(
                  graph.distances().value().data_handle(),
                  m * build_params.graph_degree,
                  handle.get_stream());
-
-      raft::print_host_vector(
-        "inds before optimize", knn_inds.data_handle(), 2 * build_params.graph_degree, std::cout);
-      raft::print_host_vector(
-        "dist before optimize", knn_dists.data_handle(), 2 * build_params.graph_degree, std::cout);
     }
 
     auto core_dists_h = raft::make_host_vector<float, int64_t>(m);
@@ -522,8 +508,6 @@ void mutual_reachability_knn_l2(
         // }
       }
     }
-    raft::print_host_vector("inds after optimize", new_inds.data_handle(), 2 * k, std::cout);
-    raft::print_host_vector("dists after optimize", new_dists.data_handle(), 2 * k, std::cout);
 
     // TODO: now sort in order
 
@@ -553,24 +537,9 @@ void mutual_reachability_knn_l2(
       cnt++;
     }
 
-    // raft::print_host_vector("inds after sort", new_inds.data_handle(), 2 * min_samples,
-    // std::cout); raft::print_host_vector("dist after sort", new_dists.data_handle(), 2 *
-    // min_samples, std::cout);
-
     // copy back
     raft::copy(out_inds, new_inds.data_handle(), m * k, handle.get_stream());
     raft::copy(out_dists, new_dists.data_handle(), m * k, handle.get_stream());
-
-    // char buffer2[50];
-    // std::sprintf(buffer2, "jinsolp_out_inds_after_nnd.txt");
-    // char* buf2 = &(buffer2[0]);
-    // std::ofstream outfile2(buf2);
-    // raft::print_device_vector("after mutual reach", out_inds, m * k, outfile2);
-    // outfile2.close();
-
-    // printf("copied back new inds and new dists\n");
-    raft::print_device_vector("inds after sort", out_inds, 2 * k, std::cout);
-    raft::print_device_vector("dist after sort", out_dists, 2 * k, std::cout);
   }
 }
 
