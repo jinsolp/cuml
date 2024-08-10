@@ -380,9 +380,10 @@ CUML_KERNEL void sort_by_key(float* out_dists,
     KeyValuePair<float, value_idx> threadKeyValuePair[ITEMS_PER_THREAD];
 
     // load key values
-    int arrIdxBase = row * graph_degree;
+    size_t arrIdxBase = row * graph_degree;
+    size_t idxBase    = static_cast<size_t>(threadIdx.x) * static_cast<size_t>(ITEMS_PER_THREAD);
     for (int i = 0; i < ITEMS_PER_THREAD; i++) {
-      int colId = row * ITEMS_PER_THREAD + i;
+      size_t colId = idxBase + static_cast<size_t>(i);
       if (colId < graph_degree) {
         threadKeyValuePair[i].key   = out_dists[arrIdxBase + colId];
         threadKeyValuePair[i].value = out_inds[arrIdxBase + colId];
@@ -397,9 +398,8 @@ CUML_KERNEL void sort_by_key(float* out_dists,
     BlockMergeSortType(tmpSmem).Sort(threadKeyValuePair, CustomKeyComparator<float, value_idx>{});
 
     // load back to global mem
-    int idxBase = threadIdx.x * ITEMS_PER_THREAD;
     for (int i = 0; i < ITEMS_PER_THREAD; i++) {
-      int colId = idxBase + i;
+      size_t colId = idxBase + static_cast<size_t>(i);
       if (colId < graph_degree) {
         out_dists[arrIdxBase + colId] = threadKeyValuePair[i].key;
         out_inds[arrIdxBase + colId]  = threadKeyValuePair[i].value;
@@ -487,8 +487,9 @@ void mutual_reachability_knn_l2(
                  "return_distances for nn descent should be set to true to be used for UMAP");
 
     auto start = raft::curTimeMillis();
+
     if (approx_mst) {
-      printf("\tdoing mst optimize");
+      printf("\tdoing mst optimize\n");
       copy_first_k_cols_shift_core_dists<float>
         <<<num_blocks, TPB, 0, handle.get_stream()>>>(graph.distances().value().data_handle(),
                                                       graph.distances().value().data_handle(),
@@ -507,13 +508,14 @@ void mutual_reachability_knn_l2(
 
       auto new_inds  = raft::make_host_matrix<value_idx, int64_t>(m, k);
       auto new_dists = raft::make_host_matrix<float, int64_t>(m, k);
-      auto knn_inds  = raft::make_host_matrix_view<value_idx, int64_t>(
-        graph.graph().data_handle(), m, build_params.graph_degree);  // reuse memory
+
       auto knn_dists = raft::make_host_matrix<float, int64_t>(m, build_params.graph_degree);
-      raft::copy(knn_inds.data_handle(),
+      raft::copy(graph.graph().data_handle(),
                  indices_d.data_handle(),
                  m * build_params.graph_degree,
                  handle.get_stream());
+      auto knn_inds = raft::make_host_matrix_view<value_idx, int64_t>(
+        graph.graph().data_handle(), m, build_params.graph_degree);  // reuse memory
       raft::copy(knn_dists.data_handle(),
                  graph.distances().value().data_handle(),
                  m * build_params.graph_degree,
@@ -544,10 +546,8 @@ void mutual_reachability_knn_l2(
         }
       }
 
-      raft::copy(
-        out_inds, new_inds.data_handle(), m * build_params.graph_degree, handle.get_stream());
-      raft::copy(
-        out_dists, new_dists.data_handle(), m * build_params.graph_degree, handle.get_stream());
+      raft::copy(out_inds, new_inds.data_handle(), m * k, handle.get_stream());
+      raft::copy(out_dists, new_dists.data_handle(), m * k, handle.get_stream());
 
       auto end2 = raft::curTimeMillis();
       printf("\t\tdoing mst optimize first part time %d\n", end2 - start2);
@@ -594,7 +594,7 @@ void mutual_reachability_knn_l2(
       printf("\t\tdoing mst optimize sorting part %d\n", end2 - start2);
 
     } else {
-      printf("\tnot doing mst optimize");
+      printf("\tnot doing mst optimize\n");
       copy_first_k_cols_shift_core_dists<float>
         <<<num_blocks, TPB, 0, handle.get_stream()>>>(out_dists,
                                                       graph.distances().value().data_handle(),
