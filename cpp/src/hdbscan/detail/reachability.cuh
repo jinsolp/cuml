@@ -192,7 +192,7 @@ void compute_knn(const raft::handle_t& handle,
     auto dataset = raft::make_host_matrix_view<const float, int64_t>(X, m, n);
 
     auto graph = NNDescent::build<float, int64_t>(handle, build_params, dataset, epilogue);
-
+    printf("returned from nnd build\n");
     size_t TPB        = 256;
     size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);
 
@@ -484,7 +484,7 @@ void mutual_reachability_knn_l2(
                handle.get_stream());
 
     RAFT_EXPECTS(graph.distances().has_value(),
-                 "return_distances for nn descent should be set to true to be used for UMAP");
+                 "return_distances for nn descent should be set to true to be used for HDBSCAN");
 
     auto start = raft::curTimeMillis();
 
@@ -693,7 +693,7 @@ void mutual_reachability_graph(
 
   // Slice core distances (distances to kth nearest neighbor)
   core_distances<value_idx>(dists.data(), min_samples, min_samples, m, core_dists, stream);
-
+  printf("returned from core dists\n");
   /**
    * Compute L2 norm
    */
