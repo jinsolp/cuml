@@ -608,6 +608,8 @@ void mutual_reachability_knn_l2(
     auto end = raft::curTimeMillis();
     printf("time to do mst postprocessing (or maybe not) %d\n", end - start);
   }
+  raft::print_device_vector("out inds", out_inds, 2 * k, std::cout);
+  raft::print_device_vector("out dists", out_dists, 2 * k, std::cout);
 }
 
 /**

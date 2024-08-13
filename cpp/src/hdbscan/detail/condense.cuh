@@ -125,10 +125,16 @@ void build_condensed_hierarchy(const raft::handle_t& handle,
 
   value_idx n_elements_to_traverse =
     thrust::reduce(exec_policy, frontier.data(), frontier.data() + root + 1, 0);
-
+  printf("root is %d, n vertices: %d\n", (int)root, (int)n_vertices);
+  // raft::print_device_vector("children", children, n_leaves * 2, std::cout);
+  // raft::print_device_vector("delta", delta, n_leaves, std::cout);
+  int cnt = 0;
   while (n_elements_to_traverse > 0) {
     // TODO: Investigate whether it would be worth performing a gather/argmatch in order
     // to schedule only the number of threads needed. (it might not be worth it)
+    cnt += 1;
+    if (cnt % 10000 == 0) { printf("cnt: %d\t", cnt); }
+    // printf("elements to traverse: %d, cnt is %d\n", (int)n_elements_to_traverse, cnt);
     condense_hierarchy_kernel<<<grid, tpb, 0, handle.get_stream()>>>(frontier.data(),
                                                                      next_frontier.data(),
                                                                      ignore.data(),
@@ -142,7 +148,13 @@ void build_condensed_hierarchy(const raft::handle_t& handle,
                                                                      out_child.data(),
                                                                      out_lambda.data(),
                                                                      out_size.data());
-
+    handle.sync_stream(stream);
+    // raft::print_device_vector("next frontier", next_frontier.data(), root + 1, std::cout);
+    // raft::print_device_vector("frontier", frontier.data(), root + 1, std::cout);
+    // raft::print_device_vector("ignore", ignore.data(), root + 1, std::cout);
+    // raft::print_device_vector("relabel", relabel.data(), root + 1, std::cout);
+    // raft::print_device_vector("out_parent", out_parent.data(), (root + 1) * 2, std::cout);
+    // raft::print_device_vector("out_child", out_child.data(), (root + 1) * 2, std::cout);
     thrust::copy(exec_policy, next_frontier.begin(), next_frontier.end(), frontier.begin());
     thrust::fill(exec_policy, next_frontier.begin(), next_frontier.end(), false);
 
@@ -151,6 +163,7 @@ void build_condensed_hierarchy(const raft::handle_t& handle,
 
     handle.sync_stream(stream);
   }
+  printf("\ntotal cnt: %d\n", cnt);
 
   condensed_tree.condense(out_parent.data(), out_child.data(), out_lambda.data(), out_size.data());
 }
