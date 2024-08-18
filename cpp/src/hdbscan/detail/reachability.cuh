@@ -472,8 +472,8 @@ void mutual_reachability_knn_l2(
     auto dataset = raft::make_host_matrix_view<const value_t, int64_t>(X, m, n);
     auto graph   = NNDescent::build<value_t, value_idx>(handle, build_params, dataset, epilogue);
     printf("returned from nnd build\n");
-    size_t TPB        = 256;
-    size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);
+    // size_t TPB        = 256;
+    // size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);
 
     // auto indices_d =
     //   raft::make_device_matrix<value_idx, value_idx>(handle, m, build_params.graph_degree);
@@ -560,21 +560,35 @@ void mutual_reachability_knn_l2(
     } else {
       printf("\tnot doing mst optimize\n");
       auto indices_d =
-        raft::make_device_matrix<value_idx, value_idx>(handle, m, build_params.graph_degree);
+        raft::make_device_matrix<value_idx, int64_t>(handle, m, build_params.graph_degree);
 
       raft::copy(indices_d.data_handle(),
                  graph.graph().data_handle(),
                  m * build_params.graph_degree,
                  handle.get_stream());
-      copy_first_k_cols_shift_core_dists<float>
-        <<<num_blocks, TPB, 0, handle.get_stream()>>>(out_dists,
-                                                      graph.distances().value().data_handle(),
-                                                      core_dists,
-                                                      k,
-                                                      build_params.graph_degree,
-                                                      m);
-      copy_first_k_cols_shift_self<value_idx><<<num_blocks, TPB, 0, handle.get_stream()>>>(
-        out_inds, indices_d.data_handle(), k, build_params.graph_degree, m);
+
+      raft::matrix::slice_coordinates coords{static_cast<int64_t>(0),
+                                             static_cast<int64_t>(0),
+                                             static_cast<int64_t>(m),
+                                             static_cast<int64_t>(k)};
+
+      auto out_knn_dists_view = raft::make_device_matrix_view(out_dists, m, (size_t)k);
+      raft::matrix::slice<float, int64_t, raft::row_major>(
+        handle, raft::make_const_mdspan(graph.distances().value()), out_knn_dists_view, coords);
+      auto out_knn_indices_view =
+        raft::make_device_matrix_view<value_idx, int64_t>(out_inds, m, (size_t)k);
+      raft::matrix::slice<value_idx, int64_t, raft::row_major>(
+        handle, raft::make_const_mdspan(indices_d.view()), out_knn_indices_view, coords);
+
+      // copy_first_k_cols_shift_core_dists<float>
+      //   <<<num_blocks, TPB, 0, handle.get_stream()>>>(out_dists,
+      //                                                 graph.distances().value().data_handle(),
+      //                                                 core_dists,
+      //                                                 k,
+      //                                                 build_params.graph_degree,
+      //                                                 m);
+      // copy_first_k_cols_shift_self<value_idx><<<num_blocks, TPB, 0, handle.get_stream()>>>(
+      //   out_inds, indices_d.data_handle(), k, build_params.graph_degree, m);
     }
     auto end = raft::curTimeMillis();
     printf("time to do mst postprocessing (or maybe not) %d\n", end - start);

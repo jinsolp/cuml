@@ -133,7 +133,7 @@ void build_condensed_hierarchy(const raft::handle_t& handle,
     // TODO: Investigate whether it would be worth performing a gather/argmatch in order
     // to schedule only the number of threads needed. (it might not be worth it)
     cnt += 1;
-    if (cnt % 10000 == 0) { printf("cnt: %d\t", cnt); }
+    if (cnt % 100000 == 0) { printf("cnt: %d\t", cnt); }
     // printf("elements to traverse: %d, cnt is %d\n", (int)n_elements_to_traverse, cnt);
     condense_hierarchy_kernel<<<grid, tpb, 0, handle.get_stream()>>>(frontier.data(),
                                                                      next_frontier.data(),
