@@ -471,17 +471,17 @@ void mutual_reachability_knn_l2(
 
     auto dataset = raft::make_host_matrix_view<const value_t, int64_t>(X, m, n);
     auto graph   = NNDescent::build<value_t, value_idx>(handle, build_params, dataset, epilogue);
-
+    printf("returned from nnd build\n");
     size_t TPB        = 256;
     size_t num_blocks = static_cast<size_t>((m + TPB) / TPB);
 
-    auto indices_d =
-      raft::make_device_matrix<value_idx, value_idx>(handle, m, build_params.graph_degree);
+    // auto indices_d =
+    //   raft::make_device_matrix<value_idx, value_idx>(handle, m, build_params.graph_degree);
 
-    raft::copy(indices_d.data_handle(),
-               graph.graph().data_handle(),
-               m * build_params.graph_degree,
-               handle.get_stream());
+    // raft::copy(indices_d.data_handle(),
+    //            graph.graph().data_handle(),
+    //            m * build_params.graph_degree,
+    //            handle.get_stream());
 
     RAFT_EXPECTS(graph.distances().has_value(),
                  "return_distances for nn descent should be set to true to be used for HDBSCAN");
@@ -490,30 +490,28 @@ void mutual_reachability_knn_l2(
 
     if (approx_mst) {
       printf("\tdoing mst optimize\n");
-      copy_first_k_cols_shift_core_dists<float>
-        <<<num_blocks, TPB, 0, handle.get_stream()>>>(graph.distances().value().data_handle(),
-                                                      graph.distances().value().data_handle(),
-                                                      core_dists,
-                                                      build_params.graph_degree,
-                                                      build_params.graph_degree,
-                                                      m);
-      copy_first_k_cols_shift_self<value_idx>
-        <<<num_blocks, TPB, 0, handle.get_stream()>>>(indices_d.data_handle(),
-                                                      indices_d.data_handle(),
-                                                      build_params.graph_degree,
-                                                      build_params.graph_degree,
-                                                      m);
-
-      auto start2 = raft::curTimeMillis();
+      // copy_first_k_cols_shift_core_dists<float>
+      //   <<<num_blocks, TPB, 0, handle.get_stream()>>>(graph.distances().value().data_handle(),
+      //                                                 graph.distances().value().data_handle(),
+      //                                                 core_dists,
+      //                                                 build_params.graph_degree,
+      //                                                 build_params.graph_degree,
+      //                                                 m);
+      // copy_first_k_cols_shift_self<value_idx>
+      //   <<<num_blocks, TPB, 0, handle.get_stream()>>>(indices_d.data_handle(),
+      //                                                 indices_d.data_handle(),
+      //                                                 build_params.graph_degree,
+      //                                                 build_params.graph_degree,
+      //                                                 m);
 
       auto new_inds  = raft::make_host_matrix<value_idx, int64_t>(m, k);
       auto new_dists = raft::make_host_matrix<float, int64_t>(m, k);
 
       auto knn_dists = raft::make_host_matrix<float, int64_t>(m, build_params.graph_degree);
-      raft::copy(graph.graph().data_handle(),
-                 indices_d.data_handle(),
-                 m * build_params.graph_degree,
-                 handle.get_stream());
+      // raft::copy(graph.graph().data_handle(),
+      //            indices_d.data_handle(),
+      //            m * build_params.graph_degree,
+      //            handle.get_stream());
       auto knn_inds = raft::make_host_matrix_view<value_idx, int64_t>(
         graph.graph().data_handle(), m, build_params.graph_degree);  // reuse memory
       raft::copy(knn_dists.data_handle(),
@@ -521,11 +519,14 @@ void mutual_reachability_knn_l2(
                  m * build_params.graph_degree,
                  handle.get_stream());
 
+      auto start2 = raft::curTimeMillis();
       optimize(handle, knn_inds, new_inds.view(), true);
-
+      auto end2 = raft::curTimeMillis();
+      printf("\t\tdoing optimize itself %d\n", end2 - start2);
       auto core_dists_h = raft::make_host_vector<float, int64_t>(m);
       raft::copy(core_dists_h.data_handle(), core_dists, m, handle.get_stream());
 
+      start2 = raft::curTimeMillis();
 #pragma omp parallel for
       for (size_t i = 0; i < m; i++) {
         for (int j = 0; j < k; j++) {
@@ -545,56 +546,26 @@ void mutual_reachability_knn_l2(
           }
         }
       }
+      end2 = raft::curTimeMillis();
+      printf("\t\tpostprocessing %d\n", end2 - start2);
 
       raft::copy(out_inds, new_inds.data_handle(), m * k, handle.get_stream());
       raft::copy(out_dists, new_dists.data_handle(), m * k, handle.get_stream());
-
-      auto end2 = raft::curTimeMillis();
-      printf("\t\tdoing mst optimize first part time %d\n", end2 - start2);
-
-      // // thrust::host_vector<value_idx> h_vals_vec(inds.data(), inds.data() + m*min_samples);
-      // // thrust::host_vector<float> h_keys_vec(dists.data(), dists.data() + m*min_samples);
-      start2 = raft::curTimeMillis();
 
       if (k <= 128) {
         sort_by_key<value_idx, 32, 4><<<m, 32, 0, handle.get_stream()>>>(out_dists, out_inds, k, m);
       }
       handle.sync_stream();
-      // std::vector<value_idx> std_vector_value(new_inds.data_handle(), new_inds.data_handle() + m
-      // * k); std::vector<float> std_vector_key(new_dists.data_handle(), new_dists.data_handle() +
-      // m * k);
-
-      // thrust::host_vector<value_idx> h_vals_vec(std_vector_value.begin(),
-      // std_vector_value.end()); thrust::host_vector<float> h_keys_vec(std_vector_key.begin(),
-      // std_vector_key.end());
-
-      // auto tuple_begin =
-      //   thrust::make_zip_iterator(thrust::make_tuple(h_keys_vec.begin(), h_vals_vec.begin()));
-      // auto tuple_end =
-      //   thrust::make_zip_iterator(thrust::make_tuple(h_keys_vec.end(), h_vals_vec.end()));
-
-      // for (size_t i = 0; i < m; i++) {
-      //   thrust::sort(tuple_begin + i * k, tuple_begin + (i + 1) * k,
-      //   CustomComparator<value_idx>());
-      // }
-
-      // int cnt = 0;
-      // for (auto it = tuple_begin; it != tuple_end; ++it) {
-      //   auto [val1, val2]                         = *it;  // Unpack the tuple
-      //   new_inds((int)(cnt / k), (int)(cnt % k))  = val2;
-      //   new_dists((int)(cnt / k), (int)(cnt % k)) = val1;
-      //   cnt++;
-      // }
-
-      // // copy back
-      // raft::copy(out_inds, new_inds.data_handle(), m * k, handle.get_stream());
-      // raft::copy(out_dists, new_dists.data_handle(), m * k, handle.get_stream());
-
-      end2 = raft::curTimeMillis();
-      printf("\t\tdoing mst optimize sorting part %d\n", end2 - start2);
 
     } else {
       printf("\tnot doing mst optimize\n");
+      auto indices_d =
+        raft::make_device_matrix<value_idx, value_idx>(handle, m, build_params.graph_degree);
+
+      raft::copy(indices_d.data_handle(),
+                 graph.graph().data_handle(),
+                 m * build_params.graph_degree,
+                 handle.get_stream());
       copy_first_k_cols_shift_core_dists<float>
         <<<num_blocks, TPB, 0, handle.get_stream()>>>(out_dists,
                                                       graph.distances().value().data_handle(),
@@ -671,7 +642,7 @@ void mutual_reachability_graph(
 {
   RAFT_EXPECTS(metric == raft::distance::DistanceType::L2SqrtExpanded,
                "Currently only L2 expanded distance is supported");
-
+  printf("indside mutual reachability grpah func\n");
   auto stream      = handle.get_stream();
   auto exec_policy = handle.get_thrust_policy();
 
