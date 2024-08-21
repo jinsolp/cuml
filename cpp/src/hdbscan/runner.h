@@ -136,23 +136,6 @@ struct FixConnectivitiesRedOp {
   }
 };
 
-// // Functor to post-process distances into reachability space (Sqrt)
-// // For usage with NN Descent which internally supports L2Expanded only
-// template <typename value_idx, typename value_t = float>
-// struct ReachabilityMaskPostProcessSqrt {
-//   DI value_t operator()(value_t value, value_idx row, value_idx col) const
-//   {
-//     if (color[row] == color[col]) {
-//       return FLT_MAX;
-//     }
-//     return max(core_dists[col], max(core_dists[row], powf(fabsf(alpha * value), 0.5)));
-//   }
-//   const value_t* core_dists;
-//   const value_idx* color;
-//   value_t alpha;
-//   float FLT_MAX = std::numeric_limits<float>::max();
-// };
-
 /**
  * Constructs a linkage by computing mutual reachability, mst, and
  * dendrogram. This is shared by HDBSCAN and Robust Single Linkage
@@ -203,8 +186,7 @@ void build_linkage(const raft::handle_t& handle,
                                                   core_dists,
                                                   mutual_reachability_coo,
                                                   params.build_algo,
-                                                  params.nn_descent_params,
-                                                  params.approx_mst);
+                                                  params.nn_descent_params);
   auto end = raft::curTimeMillis();
   printf("\tgetting the mutual reachability graph: %d\n", end - start);
   /**

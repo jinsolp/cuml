@@ -157,7 +157,6 @@ class HDBSCANParams : public RobustSingleLinkageParams {
   CLUSTER_SELECTION_METHOD cluster_selection_method = CLUSTER_SELECTION_METHOD::EOM;
   GRAPH_BUILD_ALGO build_algo                       = GRAPH_BUILD_ALGO::BRUTE_FORCE_KNN;
   nn_index_params nn_descent_params                 = {};
-  bool approx_mst                                   = false;
 };
 
 /**
