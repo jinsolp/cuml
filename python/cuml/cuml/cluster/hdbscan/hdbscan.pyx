@@ -56,7 +56,6 @@ IF GPUBUILD == 1:
             float termination_threshold,
             bool return_distances,
             size_t n_clusters,
-            bool do_batch,
 
     cdef extern from "cuml/cluster/hdbscan.hpp" namespace "ML::HDBSCAN::Common":
 
@@ -880,16 +879,14 @@ class HDBSCAN(UniversalBase, ClusterMixin, CMajorInputTagMixin):
                     params.nn_descent_params.max_iterations = <size_t> 20
                     params.nn_descent_params.termination_threshold = <float> 0.0001
                     params.nn_descent_params.return_distances = <bool> True
-                    params.nn_descent_params.n_clusters = <size_t> 2
-                    params.nn_descent_params.do_batch = <bool> False
+                    params.nn_descent_params.n_clusters = <size_t> 1
                 else:
                     params.nn_descent_params.graph_degree = <size_t> self.build_kwds.get("nnd_graph_degree", 64)
                     params.nn_descent_params.intermediate_graph_degree = <size_t> self.build_kwds.get("nnd_intermediate_graph_degree", 128)
                     params.nn_descent_params.max_iterations = <size_t> self.build_kwds.get("nnd_max_iterations", 20)
                     params.nn_descent_params.termination_threshold = <float> self.build_kwds.get("nnd_termination_threshold", 0.0001)
                     params.nn_descent_params.return_distances = <bool> self.build_kwds.get("nnd_return_distances", True)
-                    params.nn_descent_params.n_clusters = <size_t> self.build_kwds.get("nnd_n_clusters", 2)
-                    params.nn_descent_params.do_batch = <bool> self.build_kwds.get("nnd_do_batch", False)
+                    params.nn_descent_params.n_clusters = <size_t> self.build_kwds.get("nnd_n_clusters", 1)
             else:
                 raise ValueError("Build algo not supported. "
                                  "Must one of {'brute_force_knn', 'nn_descent'}")
@@ -1155,11 +1152,13 @@ class HDBSCAN(UniversalBase, ClusterMixin, CMajorInputTagMixin):
                     build_params.intermediate_graph_degree = <size_t> 128
                     build_params.max_iterations = <size_t> 20
                     build_params.termination_threshold = <float> 0.0001
+                    build_params.return_distances = <bool> True
                 else:
                     build_params.graph_degree = <size_t> self.build_kwds.get("nnd_graph_degree", 64)
                     build_params.intermediate_graph_degree = <size_t> self.build_kwds.get("nnd_intermediate_graph_degree", 128)
                     build_params.max_iterations = <size_t> self.build_kwds.get("nnd_max_iterations", 20)
                     build_params.termination_threshold = <float> self.build_kwds.get("nnd_termination_threshold", 0.0001)
+                    build_params.return_distances = <bool> self.build_kwds.get("nnd_return_distances", True)
 
             compute_core_dists(handle_[0],
                                <float*> X_ptr,
