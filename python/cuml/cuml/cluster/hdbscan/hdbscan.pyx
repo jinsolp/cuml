@@ -571,6 +571,8 @@ class HDBSCAN(UniversalBase, ClusterMixin, CMajorInputTagMixin):
         self.prediction_data_ptr = None
         self._cpu_to_gpu_interop_prepped = False
 
+        logger.set_level(verbose)
+
     @property
     def condensed_tree_(self):
 
