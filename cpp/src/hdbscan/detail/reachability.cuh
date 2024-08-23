@@ -471,19 +471,15 @@ void mutual_reachability_knn_l2(
     auto epilogue = ReachabilityPostProcessSqrt<value_idx, value_t>{core_dists, alpha};
     build_params.return_distances = true;
     auto graph = get_graph_nnd<value_idx, value_t>(handle, X, m, n, epilogue, build_params);
-    printf("returned from nnd build\n");
 
     RAFT_EXPECTS(graph.distances().has_value(),
                  "return_distances for nn descent should be set to true to be used for HDBSCAN");
-
-    auto start = raft::curTimeMillis();
 
     cudaPointerAttributes attr;
     RAFT_CUDA_TRY(cudaPointerGetAttributes(&attr, X));
     float* ptr = reinterpret_cast<float*>(attr.devicePointer);
 
     if (ptr != nullptr) {  // data on device
-      printf("\tnot doing mst optimize\n");
       auto indices_d =
         raft::make_device_matrix<value_idx, int64_t>(handle, m, build_params.graph_degree);
 
@@ -505,8 +501,6 @@ void mutual_reachability_knn_l2(
       raft::matrix::slice<value_idx, int64_t, raft::row_major>(
         handle, raft::make_const_mdspan(indices_d.view()), out_knn_indices_view, coords);
     } else {
-      printf("\tdoing mst optimize data on host\n");
-
       auto new_inds  = raft::make_host_matrix<value_idx, int64_t>(m, k);
       auto new_dists = raft::make_host_matrix<float, int64_t>(m, k);
 
@@ -519,14 +513,11 @@ void mutual_reachability_knn_l2(
                  m * build_params.graph_degree,
                  handle.get_stream());
 
-      auto start2 = raft::curTimeMillis();
       optimize(handle, knn_inds, new_inds.view(), true);
-      auto end2 = raft::curTimeMillis();
-      printf("\t\tdoing optimize itself %d\n", end2 - start2);
+
       auto core_dists_h = raft::make_host_vector<float, int64_t>(m);
       raft::copy(core_dists_h.data_handle(), core_dists, m, handle.get_stream());
 
-      start2 = raft::curTimeMillis();
 #pragma omp parallel for
       for (size_t i = 0; i < m; i++) {
         for (int j = 0; j < k; j++) {
@@ -546,8 +537,6 @@ void mutual_reachability_knn_l2(
           }
         }
       }
-      end2 = raft::curTimeMillis();
-      printf("\t\tpostprocessing %d\n", end2 - start2);
 
       raft::copy(out_inds, new_inds.data_handle(), m * k, handle.get_stream());
       raft::copy(out_dists, new_dists.data_handle(), m * k, handle.get_stream());
@@ -557,11 +546,7 @@ void mutual_reachability_knn_l2(
       }
       handle.sync_stream();
     }
-    auto end = raft::curTimeMillis();
-    printf("time to do mst postprocessing (or maybe not) %d\n", end - start);
   }
-  raft::print_device_vector("out inds", out_inds, 2 * k, std::cout);
-  raft::print_device_vector("out dists", out_dists, 2 * k, std::cout);
 }
 
 /**
@@ -622,7 +607,6 @@ void mutual_reachability_graph(
 {
   RAFT_EXPECTS(metric == raft::distance::DistanceType::L2SqrtExpanded,
                "Currently only L2 expanded distance is supported");
-  printf("indside mutual reachability grpah func\n");
   auto stream      = handle.get_stream();
   auto exec_policy = handle.get_thrust_policy();
 
@@ -646,7 +630,6 @@ void mutual_reachability_graph(
 
   // Slice core distances (distances to kth nearest neighbor)
   core_distances<value_idx>(dists.data(), min_samples, min_samples, m, core_dists, stream);
-  printf("returned from core dists\n");
   /**
    * Compute L2 norm
    */
