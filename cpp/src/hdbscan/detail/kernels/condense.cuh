@@ -123,17 +123,14 @@ CUML_KERNEL void condense_hierarchy_kernel(bool* frontier,
   else {
     value_idx left_child  = children[(node - n_leaves) * 2];
     value_idx right_child = children[((node - n_leaves) * 2) + 1];
-    // printf("node: %d, left child: %d, right child: %d, should ignore %d\n", (int)node,
-    // left_child, right_child, (int)should_ignore);
 
     // flip frontier for children
     next_frontier[left_child]  = true;
     next_frontier[right_child] = true;
 
     // propagate ignore down to children
-    value_t ignore_res  = should_ignore ? subtree_lambda : -1;
-    ignore[left_child]  = ignore_res;
-    ignore[right_child] = ignore_res;
+    ignore[left_child]  = should_ignore ? subtree_lambda : -1;
+    ignore[right_child] = should_ignore ? subtree_lambda : -1;
 
     relabel[left_child]  = should_ignore ? relabel[node] : relabel[left_child];
     relabel[right_child] = should_ignore ? relabel[node] : relabel[right_child];

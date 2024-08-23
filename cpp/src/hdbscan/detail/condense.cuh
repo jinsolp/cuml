@@ -126,13 +126,9 @@ void build_condensed_hierarchy(const raft::handle_t& handle,
   value_idx n_elements_to_traverse =
     thrust::reduce(exec_policy, frontier.data(), frontier.data() + root + 1, 0);
 
-  int cnt = 0;
   while (n_elements_to_traverse > 0) {
     // TODO: Investigate whether it would be worth performing a gather/argmatch in order
     // to schedule only the number of threads needed. (it might not be worth it)
-    cnt += 1;
-    if (cnt % 100000 == 0) { printf("cnt: %d\t", cnt); }
-
     condense_hierarchy_kernel<<<grid, tpb, 0, handle.get_stream()>>>(frontier.data(),
                                                                      next_frontier.data(),
                                                                      ignore.data(),
@@ -146,7 +142,6 @@ void build_condensed_hierarchy(const raft::handle_t& handle,
                                                                      out_child.data(),
                                                                      out_lambda.data(),
                                                                      out_size.data());
-    handle.sync_stream(stream);
 
     thrust::copy(exec_policy, next_frontier.begin(), next_frontier.end(), frontier.begin());
     thrust::fill(exec_policy, next_frontier.begin(), next_frontier.end(), false);
@@ -156,7 +151,6 @@ void build_condensed_hierarchy(const raft::handle_t& handle,
 
     handle.sync_stream(stream);
   }
-  printf("\ntotal cnt: %d\n", cnt);
 
   condensed_tree.condense(out_parent.data(), out_child.data(), out_lambda.data(), out_size.data());
 }
