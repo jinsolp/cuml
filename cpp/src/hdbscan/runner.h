@@ -192,7 +192,6 @@ void build_linkage(const raft::handle_t& handle,
 
   rmm::device_uvector<value_idx> color(m, stream);
   FixConnectivitiesRedOp<value_idx, value_t> red_op(core_dists, m);
-
   // during knn graph connection
   raft::cluster::detail::build_sorted_mst(handle,
                                           X,
