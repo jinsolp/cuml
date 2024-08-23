@@ -174,7 +174,6 @@ void build_linkage(const raft::handle_t& handle,
   raft::sparse::COO<value_t, value_idx> mutual_reachability_coo(stream,
                                                                 (params.min_samples + 1) * m * 2);
 
-  auto start = raft::curTimeMillis();
   detail::Reachability::mutual_reachability_graph(handle,
                                                   X,
                                                   (size_t)m,
@@ -187,8 +186,6 @@ void build_linkage(const raft::handle_t& handle,
                                                   mutual_reachability_coo,
                                                   params.build_algo,
                                                   params.nn_descent_params);
-  auto end = raft::curTimeMillis();
-  printf("\tgetting the mutual reachability graph: %d\n", end - start);
   /**
    * Construct MST sorted by weights
    */
@@ -196,7 +193,6 @@ void build_linkage(const raft::handle_t& handle,
   rmm::device_uvector<value_idx> color(m, stream);
   FixConnectivitiesRedOp<value_idx, value_t> red_op(core_dists, m);
 
-  start = raft::curTimeMillis();
   // during knn graph connection
   raft::cluster::detail::build_sorted_mst(handle,
                                           X,
@@ -213,15 +209,12 @@ void build_linkage(const raft::handle_t& handle,
                                           red_op,
                                           metric,
                                           (size_t)10);
-  end = raft::curTimeMillis();
-  printf("\tbuilding sorted mst: %d\n", end - start);
 
   /**
    * Perform hierarchical labeling
    */
   size_t n_edges = m - 1;
 
-  start = raft::curTimeMillis();
   raft::cluster::detail::build_dendrogram_host(handle,
                                                out.get_mst_src(),
                                                out.get_mst_dst(),
@@ -230,8 +223,6 @@ void build_linkage(const raft::handle_t& handle,
                                                out.get_children(),
                                                out.get_deltas(),
                                                out.get_sizes());
-  end = raft::curTimeMillis();
-  printf("\tbuilding dendrogram: %d\n", end - start);
 }
 
 template <typename value_idx = int64_t, typename value_t = float>
@@ -250,15 +241,11 @@ void _fit_hdbscan(const raft::handle_t& handle,
 
   int min_cluster_size = params.min_cluster_size;
 
-  auto start = raft::curTimeMillis();
   build_linkage(handle, X, m, n, metric, params, core_dists, out);
-  auto end = raft::curTimeMillis();
-  printf("time to build linkage: %d\n", end - start);
 
   /**
    * Condense branches of tree according to min cluster size
    */
-  start = raft::curTimeMillis();
   detail::Condense::build_condensed_hierarchy(handle,
                                               out.get_children(),
                                               out.get_deltas(),
@@ -266,8 +253,6 @@ void _fit_hdbscan(const raft::handle_t& handle,
                                               min_cluster_size,
                                               m,
                                               out.get_condensed_tree());
-  end = raft::curTimeMillis();
-  printf("time to build condensed hierarchy: %d\n", end - start);
 
   /**
    * Extract labels from stability
