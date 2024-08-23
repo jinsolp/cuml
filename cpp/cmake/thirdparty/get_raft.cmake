@@ -84,6 +84,7 @@ endfunction()
 find_and_configure_raft(VERSION          ${CUML_MIN_VERSION_raft}
       FORK             rapidsai
       PINNED_TAG       branch-${CUML_BRANCH_VERSION_raft}
+      EXCLUDE_FROM_ALL ${CUML_EXCLUDE_RAFT_FROM_ALL}
       # When PINNED_TAG above doesn't match cuml,
       # force local raft clone in build directory
       # even if it's already installed.
