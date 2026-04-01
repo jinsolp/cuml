@@ -212,12 +212,12 @@ void optimize_layout(T* head_embedding,
   T rounding = create_gradient_rounding_factor<T, nnz_t>(head, nnz, head_n, alpha, stream_view);
 
   auto min_n                = min(head_n, tail_n);
-  int threshold_for_outlier = 1024;  // this is a heuristic value.
+  int threshold_for_outlier = 512;  // this is a heuristic value.
   // for smaller datasets, could be a dense point even with a smaller graph degree
   if (min_n <= 100000) {
-    threshold_for_outlier = 256;
+    threshold_for_outlier = 128;
   } else if (min_n <= 1000000) {
-    threshold_for_outlier = 512;
+    threshold_for_outlier = 256;
   }
 
   int num_chunks = 1;
